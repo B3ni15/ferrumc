@@ -65,12 +65,12 @@ pub fn handle(
                     );
                 }
             }
-            } else {
+        } else {
             warn!(
                 "Failed to fetch head block for player {} at position: ({}, {}, {})",
                 player, player_pos.x, player_pos.y, player_pos.z
             );
-            }
+            
 
             // Send existing players to this newly loaded player
             // Build a packet that contains all currently connected players
