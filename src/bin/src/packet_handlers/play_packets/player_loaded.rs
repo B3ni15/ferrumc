@@ -92,7 +92,7 @@ pub fn handle(
             // Broadcast to other connected players that this player joined
             let add_packet = PlayerInfoUpdatePacket::new_player_join_packet(PlayerIdentity::new(player.to_string(), 0));
             // We need to send add_packet to all other StreamWriters
-            for (other_entity, other_pos, other_conn) in query.iter() {
+            for (other_entity, _other_pos, other_conn) in query.iter() {
                 if other_entity == entity {
                     continue;
                 }
