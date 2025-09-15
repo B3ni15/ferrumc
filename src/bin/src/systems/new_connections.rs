@@ -9,6 +9,9 @@ use ferrumc_inventories::hotbar::Hotbar;
 use ferrumc_inventories::inventory::Inventory;
 use ferrumc_net::connection::NewConnection;
 use ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket;
+use ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions;
+use ferrumc_net::connection::StreamWriter;
+use bevy_ecs::prelude::Query;
 use ferrumc_state::GlobalStateResource;
 use std::time::Instant;
 use tracing::{error, trace};
@@ -20,6 +23,7 @@ pub fn accept_new_connections(
     mut cmd: Commands,
     new_connections: Res<NewConnectionRecv>,
     state: Res<GlobalStateResource>,
+    query: Query<(bevy_ecs::prelude::Entity, &StreamWriter)>,
 ) {
     if new_connections.0.is_empty() {
         return;
@@ -59,6 +63,20 @@ pub fn accept_new_connections(
                 new_connection.player_identity.username,
             ),
         );
+        // Build AddPlayer packet for this new player including properties
+        let short = new_connection.player_identity.uuid.as_u128() as i32;
+        let add_player = PlayerWithActions::add_player_with_properties(short, new_connection.player_identity.username.clone());
+        let add_packet = PlayerInfoUpdatePacket::with_players(vec![add_player]);
+
+        // Broadcast to other connected players
+        for (other_entity, other_conn) in query.iter() {
+            if other_entity == entity.id() {
+                continue;
+            }
+            if let Err(e) = other_conn.send_packet_ref(&add_packet) {
+                tracing::warn!("Failed to send add-player to {:?}: {:?}", other_entity, e);
+            }
+        }
         // Send existing players to the newly connected client
         if let Some(stream_writer) = new_connection.stream.sender.clone().into_inner().ok() {
             // Note: we don't have direct access to Query here; instead use the PlayerInfoUpdatePacket::new_player_join_packet

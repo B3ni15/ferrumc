@@ -4,6 +4,7 @@ use ferrumc_macros::{packet, NetEncode};
 use ferrumc_net_codec::net_types::length_prefixed_vec::LengthPrefixedVec;
 use ferrumc_net_codec::net_types::var_int::VarInt;
 use tracing::debug;
+use crate::skins_cache;
 
 #[derive(NetEncode)]
 #[packet(packet_id = "player_info_update", state = "play")]
@@ -90,6 +91,29 @@ impl PlayerWithActions {
                 name: name.into(),
                 properties: LengthPrefixedVec::default(),
             }],
+        }
+    }
+
+    /// Add a player including properties (skin) if available
+    pub fn add_player_with_properties(uuid: i32, name: impl Into<String>) -> Self {
+        let name = name.into();
+        let props = match skins_cache::get_skin(uuid) {
+            Some(sp) => {
+                let mut lp: LengthPrefixedVec<PlayerProperty> = LengthPrefixedVec::default();
+                lp.push(PlayerProperty {
+                    name: "textures".to_string(),
+                    value: sp.value,
+                    is_signed: sp.signature.is_some(),
+                    signature: sp.signature,
+                });
+                lp
+            }
+            None => LengthPrefixedVec::default(),
+        };
+
+        Self {
+            uuid,
+            actions: vec![PlayerAction::AddPlayer { name, properties: props }],
         }
     }
 

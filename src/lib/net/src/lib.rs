@@ -10,6 +10,7 @@ mod conn_init;
 pub mod connection;
 pub mod errors;
 pub mod packets;
+pub mod skins_cache;
 pub mod server;
 
 setup_packet_handling!("\\src\\packets\\incoming");
