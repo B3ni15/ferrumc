@@ -1,148 +1,174 @@
-use bevy_ecs::prelude::{Component, Entity, Query};
-use ferrumc_core::identity::player_identity::PlayerIdentity;
-use ferrumc_macros::{packet, NetEncode};
-use ferrumc_text::TextComponent;
 use ferrumc_net_codec::net_types::length_prefixed_vec::LengthPrefixedVec;
+use bevy_ecs::prelude::Component;
+use ferrumc_core::identity::player_identity::PlayerIdentity;
+use ferrumc_macros::packet;
 use ferrumc_net_codec::net_types::var_int::VarInt;
+use ferrumc_text::TextComponent;
+use ferrumc_net_codec::encode::NetEncode;
+use ferrumc_net_codec::encode::NetEncodeOpts;
+use ferrumc_net_codec::encode::errors::NetEncodeError;
+use std::io::Write;
 use tracing::debug;
 use crate::skins_cache;
 
-#[derive(NetEncode)]
 #[packet(packet_id = "player_info_update", state = "play")]
 pub struct PlayerInfoUpdatePacket {
-    pub actions: u8,
+    // This struct is a placeholder to register the packet id with the macro.
+    // Actual encoding is implemented in `impl NetEncode for PlayerInfoUpdatePacket` below.
+    pub action: VarInt,
     pub numbers_of_players: VarInt,
-    pub players: Vec<PlayerWithActions>,
 }
 
-impl PlayerInfoUpdatePacket {
-    pub fn with_players(players: Vec<PlayerWithActions>) -> Self {
-        let players: Vec<PlayerWithActions> = players.into_iter().collect();
-        Self {
-            actions: players
-                .iter()
-                .map(|player| player.get_actions_mask())
-                .fold(0, |acc, x| acc | x),
-            numbers_of_players: VarInt::new(players.len() as i32),
-            players,
-        }
-    }
-
-    /// The packet to be sent to all already connected players when a new player joins the server
-    pub fn new_player_join_packet(identity: PlayerIdentity) -> Self {
-        let player = PlayerWithActions::add_player(identity.short_uuid, identity.username, 0);
-
-        Self::with_players(vec![player])
-    }
-
-    /// The packet to be sent to a new player when they join the server,
-    /// To let them know about all the players that are already connected
-    pub fn existing_player_info_packet(
-        new_player_id: Entity,
-        query: Query<(Entity, &PlayerIdentity)>,
-    ) -> Self {
-        let players: Vec<&PlayerIdentity> = {
-            let players = query.iter().collect::<Vec<(_, _)>>();
-            players
-                .iter()
-                .filter(|&player| player.0 != new_player_id)
-                .map(|player| player.1)
-                .collect()
-        };
-
-        let players = players
-            .into_iter()
-            .map(|player| {
-                let uuid = player.short_uuid;
-                let name = player.username.clone();
-
-                (uuid, name)
-            })
-            .map(|(uuid, name)| PlayerWithActions::add_player_with_properties(uuid, name, 0))
-            .collect::<Vec<_>>();
-
-        debug!("Sending PlayerInfoUpdatePacket with {:?} players", players);
-
-        Self::with_players(players)
-    }
+#[derive(Debug, Clone, Component)]
+pub struct AddEntry {
+    pub uuid: u128,
+    pub name: String,
+    pub properties: LengthPrefixedVec<PlayerProperty>,
+    pub gamemode: VarInt,
+    pub ping: VarInt,
+    pub display_name: Option<TextComponent>,
 }
 
-#[derive(NetEncode, Debug, Component)]
-pub struct PlayerWithActions {
-    pub uuid: i32,
-    pub actions: Vec<PlayerAction>,
+#[derive(Debug, Clone)]
+pub struct UpdateLatencyEntry {
+    pub uuid: u128,
+    pub ping: VarInt,
 }
 
-impl PlayerWithActions {
-    pub fn get_actions_mask(&self) -> u8 {
-        let mut mask = 0;
-        for action in &self.actions {
-            mask |= match action {
-                PlayerAction::AddPlayer { .. } => 0x01,
-                PlayerAction::RemovePlayer { .. } => 0x02,
-            }
-        }
-        mask
-    }
-
-    pub fn add_player(uuid: i32, name: impl Into<String>, ping: i32) -> Self {
-        Self {
-            uuid,
-            actions: vec![PlayerAction::AddPlayer {
-                name: name.into(),
-                properties: LengthPrefixedVec::default(),
-                gamemode: VarInt::new(0),
-                ping: VarInt::new(ping),
-                display_name: None,
-            }],
-        }
-    }
-
-    /// Add a player including properties (skin) if available
-    /// Add a player including properties (skin) if available
-    /// Add a player including properties (skin) if available
-    pub fn add_player_with_properties(uuid: i32, name: impl Into<String>, ping: i32) -> Self {
-        let name = name.into();
-        let props = match skins_cache::get_skin(uuid) {
-            Some(sp) => {
-                let mut lp: LengthPrefixedVec<PlayerProperty> = LengthPrefixedVec::default();
-                lp.push(PlayerProperty {
-                    name: "textures".to_string(),
-                    value: sp.value,
-                    is_signed: sp.signature.is_some(),
-                    signature: sp.signature,
-                });
-                lp
-            }
-            None => LengthPrefixedVec::default(),
-        };
-
-        Self { uuid, actions: vec![PlayerAction::AddPlayer { name, properties: props, gamemode: VarInt::new(0), ping: VarInt::new(ping), display_name: None }], }
-    }
-
-    pub fn remove_player(uuid: i32) -> Self {
-        Self { uuid, actions: vec![PlayerAction::RemovePlayer {}], }
-    }
+#[derive(Debug, Clone)]
+pub struct RemoveEntry {
+    pub uuid: u128,
 }
 
-#[derive(NetEncode, Debug)]
-pub enum PlayerAction {
-    AddPlayer {
-        name: String,
-        properties: LengthPrefixedVec<PlayerProperty>,
-        gamemode: VarInt,
-        ping: VarInt,
-        display_name: Option<TextComponent>,
-    },
-    RemovePlayer {
-        // In the protocol remove has no fields for the player entry itself
-    },
-}
-
-#[derive(NetEncode, Debug)]
+#[derive(Debug, Clone)]
 pub struct PlayerProperty {
     pub name: String,
     pub value: String,
     pub is_signed: bool,
     pub signature: Option<String>,
+}
+
+pub enum PlayerInfoPacketKind {
+    Add(Vec<AddEntry>),
+    UpdateLatency(Vec<UpdateLatencyEntry>),
+    Remove(Vec<RemoveEntry>),
+}
+
+impl PlayerInfoUpdatePacket {
+    pub fn add_players(entries: Vec<AddEntry>) -> (Self, PlayerInfoPacketKind) {
+        let pkt = Self { action: VarInt::new(0), numbers_of_players: VarInt::new(entries.len() as i32) };
+        (pkt, PlayerInfoPacketKind::Add(entries))
+    }
+
+    pub fn update_latency(entries: Vec<UpdateLatencyEntry>) -> (Self, PlayerInfoPacketKind) {
+        let pkt = Self { action: VarInt::new(2), numbers_of_players: VarInt::new(entries.len() as i32) };
+        (pkt, PlayerInfoPacketKind::UpdateLatency(entries))
+    }
+
+    pub fn remove_players(entries: Vec<RemoveEntry>) -> (Self, PlayerInfoPacketKind) {
+        let pkt = Self { action: VarInt::new(4), numbers_of_players: VarInt::new(entries.len() as i32) };
+        (pkt, PlayerInfoPacketKind::Remove(entries))
+    }
+}
+
+impl NetEncode for PlayerInfoUpdatePacket {
+    fn encode<W: Write>(&self, writer: &mut W, _opts: &NetEncodeOpts) -> Result<(), NetEncodeError> {
+        // This implementation expects the caller to first write the action and number of players,
+        // then for each player write the appropriate fields depending on action. However, because
+        // the macro-generated code expects to call `encode` on the packet only, we will not implement
+        // a full per-entry encode here; instead callers should use the helper `encode_full_packet` below.
+        // To keep compatibility with the macro, encode only the action and number_of_players.
+        self.action.encode(writer, &NetEncodeOpts::None)?;
+        self.numbers_of_players.encode(writer, &NetEncodeOpts::None)?;
+        Ok(())
+    }
+
+    async fn encode_async<W: tokio::io::AsyncWrite + Unpin>(
+        &self,
+        _writer: &mut W,
+        _opts: &NetEncodeOpts,
+    ) -> Result<(), NetEncodeError> {
+        // Async encoding not needed for this packet
+        unimplemented!();
+    }
+}
+
+impl NetEncode for PlayerProperty {
+    fn encode<W: Write>(&self, writer: &mut W, _opts: &NetEncodeOpts) -> Result<(), NetEncodeError> {
+        // name, value, has_signature(bool), signature if present
+        self.name.encode(writer, &NetEncodeOpts::None)?;
+        self.value.encode(writer, &NetEncodeOpts::None)?;
+        self.is_signed.encode(writer, &NetEncodeOpts::None)?;
+        if self.is_signed {
+            if let Some(sig) = &self.signature {
+                sig.encode(writer, &NetEncodeOpts::None)?;
+            } else {
+                // signature claimed but missing; write empty string to be safe
+                "".to_string().encode(writer, &NetEncodeOpts::None)?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn encode_async<W: tokio::io::AsyncWrite + Unpin>(
+        &self,
+        _writer: &mut W,
+        _opts: &NetEncodeOpts,
+    ) -> Result<(), NetEncodeError> {
+        // Not used
+        unimplemented!();
+    }
+}
+
+/// Helper function to fully encode a PlayerInfo packet (action + players) into a writer.
+pub fn encode_full_packet<W: Write>(writer: &mut W, kind: &PlayerInfoPacketKind) -> Result<(), NetEncodeError> {
+    match kind {
+        PlayerInfoPacketKind::Add(entries) => {
+            // action 0, number of players
+            VarInt::new(0).encode(writer, &NetEncodeOpts::None)?;
+            VarInt::new(entries.len() as i32).encode(writer, &NetEncodeOpts::None)?;
+            for e in entries {
+                // uuid as u128
+                e.uuid.encode(writer, &NetEncodeOpts::None)?;
+                // name
+                e.name.encode(writer, &NetEncodeOpts::None)?;
+                // properties
+                e.properties.encode(writer, &NetEncodeOpts::None)?;
+                // gamemode
+                e.gamemode.encode(writer, &NetEncodeOpts::None)?;
+                // ping
+                e.ping.encode(writer, &NetEncodeOpts::None)?;
+                // display_name (optional)
+                match &e.display_name {
+                    Some(text) => {
+                        // There's no Option<T> encoding with length, encode a present flag?
+                        // Protocol expects a boolean then component if present. We'll mimic that.
+                        true.encode(writer, &NetEncodeOpts::None)?;
+                        text.encode(writer, &NetEncodeOpts::None)?;
+                    }
+                    None => {
+                        false.encode(writer, &NetEncodeOpts::None)?;
+                    }
+                }
+            }
+            Ok(())
+        }
+        PlayerInfoPacketKind::UpdateLatency(entries) => {
+            VarInt::new(2).encode(writer, &NetEncodeOpts::None)?;
+            VarInt::new(entries.len() as i32).encode(writer, &NetEncodeOpts::None)?;
+            for e in entries {
+                e.uuid.encode(writer, &NetEncodeOpts::None)?;
+                e.ping.encode(writer, &NetEncodeOpts::None)?;
+            }
+            Ok(())
+        }
+        PlayerInfoPacketKind::Remove(entries) => {
+            VarInt::new(4).encode(writer, &NetEncodeOpts::None)?;
+            VarInt::new(entries.len() as i32).encode(writer, &NetEncodeOpts::None)?;
+            for e in entries {
+                e.uuid.encode(writer, &NetEncodeOpts::None)?;
+            }
+            Ok(())
+        }
+    }
 }

@@ -8,6 +8,7 @@ use ferrumc_net::PlayerLoadedReceiver;
 use ferrumc_state::GlobalStateResource;
 use ferrumc_world::block_id::BlockId;
 use tracing::warn;
+use std::collections::HashMap;
 
 pub fn handle(
     ev: Res<PlayerLoadedReceiver>,
@@ -73,32 +74,31 @@ pub fn handle(
         }
 
         // Send existing players to this newly loaded player (including themselves)
-        // Build a packet that contains all currently connected players
-        let mut players = vec![];
+        // Build AddEntry list and fill ping using a snapshot map of Entity -> last_rtt_ms
+        let mut add_entries = vec![];
+
+        // Build a quick lookup map from entities in the incoming query to their last_rtt_ms
+        let mut ping_map: HashMap<bevy_ecs::prelude::Entity, i32> = HashMap::new();
+        for (ent, _pos, _conn, tracker) in query.iter() {
+            ping_map.insert(ent, tracker.last_rtt_ms);
+        }
+
         for entry in state.0.players.player_list.iter() {
-            let (_entity, (uuid128, name)) = (entry.key().clone(), entry.value().clone());
-            // short uuid is i32 (lower bits)
-            let short = uuid128 as i32;
-            // Use 0 for other players for now; later we can look up their KeepAliveTracker RTTs
-            players.push(ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::add_player_with_properties(short, name.clone(), 0));
-        }
-
-        // If we have an RTT measurement for this connection, update the player's own entry ping.
-        // Rebuild their PlayerWithActions using the RTT from their KeepAliveTracker.
-        if let Some(entry_ref) = state.0.players.player_list.get(&entity) {
-            let (uuid128, name) = entry_ref.value().clone();
-            let short = uuid128 as i32;
-            let rtt = keepalive.last_rtt_ms;
-            // find index of this player's entry
-            if let Some(idx) = players.iter().position(|p| p.uuid == short) {
-                players[idx] = ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::add_player_with_properties(short, name, rtt);
+            let (entity_key, (uuid128, name)) = (entry.key().clone(), entry.value().clone());
+            let ping_ms = ping_map.get(&entity_key).copied().unwrap_or(0);
+            let mut props = LengthPrefixedVec::default();
+            if let Some(sp) = ferrumc_net::skins_cache::get_skin(uuid128 as i32) {
+                props.push(ferrumc_net::packets::outgoing::player_info_update::PlayerProperty { name: "textures".to_string(), value: sp.value, is_signed: sp.signature.is_some(), signature: sp.signature });
             }
+            add_entries.push(ferrumc_net::packets::outgoing::player_info_update::AddEntry { uuid: uuid128, name, properties: props, gamemode: ferrumc_net_codec::net_types::var_int::VarInt::new(0), ping: ferrumc_net_codec::net_types::var_int::VarInt::new(ping_ms), display_name: None });
         }
 
-        if !players.is_empty() {
-            tracing::debug!("Sending existing players list to {}: {} entries", player, players.len());
-            let packet = PlayerInfoUpdatePacket::with_players(players);
-            if let Err(e) = conn.send_packet_ref(&packet) {
+        if !add_entries.is_empty() {
+            tracing::debug!("Sending existing players list to {}: {} entries", player, add_entries.len());
+            let mut buf = Vec::new();
+            if let Err(e) = ferrumc_net::packets::outgoing::player_info_update::encode_full_packet(&mut buf, &ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Add(add_entries)) {
+                tracing::error!("Failed to encode existing players for {}: {:?}", player, e);
+            } else if let Err(e) = conn.send_raw(&buf) {
                 tracing::error!("Failed to send existing players to {}: {:?}", player, e);
             }
         }

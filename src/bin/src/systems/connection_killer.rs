@@ -47,15 +47,17 @@ pub fn connection_killer(
                 // Clone the stored tuple to avoid moving out of the DashMap entry
                 if let Some(entry_ref) = state.0.players.player_list.get(&disconnecting_entity) {
                     let (uuid128, _name) = entry_ref.value().clone();
-                    let short = uuid128 as i32;
-                    let remove_pkt = ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket::with_players(vec![
-                        ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::remove_player(short)
-                    ]);
+                    let remove_entry = ferrumc_net::packets::outgoing::player_info_update::RemoveEntry { uuid: uuid128 };
+                    let mut buf = Vec::new();
+                    if let Err(e) = ferrumc_net::packets::outgoing::player_info_update::encode_full_packet(&mut buf, &ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Remove(vec![remove_entry])) {
+                        warn!("Failed to encode remove-player packet: {:?}", e);
+                        continue;
+                    }
                     for (other_entity, other_conn, _other_identity) in query.iter() {
                         if other_entity == disconnecting_entity {
                             continue;
                         }
-                        if let Err(e) = other_conn.send_packet_ref(&remove_pkt) {
+                        if let Err(e) = other_conn.send_raw(&buf) {
                             warn!("Failed to send remove-player packet to {:?}: {:?}", other_entity, e);
                         }
                     }

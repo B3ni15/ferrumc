@@ -42,6 +42,8 @@ pub fn accept_new_connections(
                 last_sent_keep_alive: 0,
                 last_received_keep_alive: Instant::now(),
                 has_received_keep_alive: true,
+                last_sent_instant: None,
+                last_rtt_ms: 0,
             },
             Inventory::new(46),
             Hotbar::default(),
@@ -61,19 +63,37 @@ pub fn accept_new_connections(
         // Build AddPlayer packet for this new player including properties
     let short_uuid = new_connection.player_identity.short_uuid;
     // initial ping is 0 until we have an RTT measurement
-    let add_player = PlayerWithActions::add_player_with_properties(short_uuid, new_connection.player_identity.username.clone(), 0);
+    let add_entry = ferrumc_net::packets::outgoing::player_info_update::AddEntry {
+        uuid: new_connection.player_identity.uuid.as_u128(),
+        name: new_connection.player_identity.username.clone(),
+        properties: {
+            let mut lp = LengthPrefixedVec::default();
+            match ferrumc_net::skins_cache::get_skin(short_uuid) {
+                Some(sp) => lp.push(ferrumc_net::packets::outgoing::player_info_update::PlayerProperty { name: "textures".to_string(), value: sp.value, is_signed: sp.signature.is_some(), signature: sp.signature }),
+                None => {}
+            }
+            lp
+        },
+        gamemode: ferrumc_net_codec::net_types::var_int::VarInt::new(0),
+        ping: ferrumc_net_codec::net_types::var_int::VarInt::new(0),
+        display_name: None,
+    };
     debug!("Broadcasting AddPlayer for player {:?}", new_connection.player_identity.username);
-    let add_packet = PlayerInfoUpdatePacket::with_players(vec![add_player]);
 
-        // Broadcast to other connected players
-        for (other_entity, other_conn) in query.iter() {
-            if other_entity == entity.id() {
-                continue;
-            }
-            if let Err(e) = other_conn.send_packet_ref(&add_packet) {
-                tracing::warn!("Failed to send add-player to {:?}: {:?}", other_entity, e);
-            }
+    // Broadcast to other connected players
+    for (other_entity, other_conn) in query.iter() {
+        if other_entity == entity.id() {
+            continue;
         }
+        let mut buf = Vec::new();
+        if let Err(e) = ferrumc_net::packets::outgoing::player_info_update::encode_full_packet(&mut buf, &ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Add(vec![add_entry.clone()])) {
+            tracing::warn!("Failed to encode add-player for {:?}: {:?}", other_entity, e);
+            continue;
+        }
+        if let Err(e) = other_conn.send_raw(&buf) {
+            tracing::warn!("Failed to send add-player to {:?}: {:?}", other_entity, e);
+        }
+    }
         // Existing-player send is handled in player_loaded; add-player broadcast done above
         if let Err(err) = return_sender.send(entity.id()) {
             error!(
