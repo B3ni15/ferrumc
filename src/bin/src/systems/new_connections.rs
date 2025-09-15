@@ -9,7 +9,7 @@ use ferrumc_inventories::hotbar::Hotbar;
 use ferrumc_inventories::inventory::Inventory;
 use ferrumc_net::connection::NewConnection;
 use ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket;
-use ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions;
+use ferrumc_net_codec::net_types::length_prefixed_vec::LengthPrefixedVec;
 use ferrumc_net::connection::StreamWriter;
 use bevy_ecs::prelude::Query;
 use ferrumc_state::GlobalStateResource;
@@ -80,17 +80,16 @@ pub fn accept_new_connections(
     };
     debug!("Broadcasting AddPlayer for player {:?}", new_connection.player_identity.username);
 
-    // Broadcast to other connected players
+    // Broadcast to other connected players using the NetEncode-based StreamWriter so
+    // compression and framing are handled uniformly.
+    let packet = ferrumc_net::packets::outgoing::player_info_update::PlayerInfoFull(
+        ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Add(vec![add_entry.clone()]),
+    );
     for (other_entity, other_conn) in query.iter() {
         if other_entity == entity.id() {
             continue;
         }
-        let mut buf = Vec::new();
-        if let Err(e) = ferrumc_net::packets::outgoing::player_info_update::encode_full_packet(&mut buf, &ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Add(vec![add_entry.clone()])) {
-            tracing::warn!("Failed to encode add-player for {:?}: {:?}", other_entity, e);
-            continue;
-        }
-        if let Err(e) = other_conn.send_raw(&buf) {
+        if let Err(e) = other_conn.send_packet_ref(&packet) {
             tracing::warn!("Failed to send add-player to {:?}: {:?}", other_entity, e);
         }
     }

@@ -1,4 +1,5 @@
 use bevy_ecs::prelude::{Entity, Query, Res};
+use ferrumc_net_codec::net_types::length_prefixed_vec::LengthPrefixedVec;
 use ferrumc_core::transform::position::Position;
 use ferrumc_net::connection::StreamWriter;
 use ferrumc_core::conn::keepalive::KeepAliveTracker;
@@ -95,10 +96,10 @@ pub fn handle(
 
         if !add_entries.is_empty() {
             tracing::debug!("Sending existing players list to {}: {} entries", player, add_entries.len());
-            let mut buf = Vec::new();
-            if let Err(e) = ferrumc_net::packets::outgoing::player_info_update::encode_full_packet(&mut buf, &ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Add(add_entries)) {
-                tracing::error!("Failed to encode existing players for {}: {:?}", player, e);
-            } else if let Err(e) = conn.send_raw(&buf) {
+            let packet = ferrumc_net::packets::outgoing::player_info_update::PlayerInfoFull(
+                ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Add(add_entries),
+            );
+            if let Err(e) = conn.send_packet_ref(&packet) {
                 tracing::error!("Failed to send existing players to {}: {:?}", player, e);
             }
         }

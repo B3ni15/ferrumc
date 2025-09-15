@@ -48,10 +48,71 @@ pub struct PlayerProperty {
     pub signature: Option<String>,
 }
 
+#[derive(Debug, Clone)]
 pub enum PlayerInfoPacketKind {
     Add(Vec<AddEntry>),
     UpdateLatency(Vec<UpdateLatencyEntry>),
     Remove(Vec<RemoveEntry>),
+}
+
+// Wrapper that implements NetEncode for a full Player Info packet (writes packet id + body).
+#[derive(Debug, Clone)]
+pub struct PlayerInfoFull(pub PlayerInfoPacketKind);
+
+impl NetEncode for PlayerInfoFull {
+    fn encode<W: std::io::Write>(&self, writer: &mut W, _opts: &NetEncodeOpts) -> Result<(), NetEncodeError> {
+        // Packet id for `player_info_update` in our assets mapping is 63
+        VarInt::new(63).encode(writer, &NetEncodeOpts::None)?;
+        match &self.0 {
+            PlayerInfoPacketKind::Add(entries) => {
+                // action 0, number of players
+                VarInt::new(0).encode(writer, &NetEncodeOpts::None)?;
+                VarInt::new(entries.len() as i32).encode(writer, &NetEncodeOpts::None)?;
+                for e in entries {
+                    e.uuid.encode(writer, &NetEncodeOpts::None)?;
+                    e.name.encode(writer, &NetEncodeOpts::None)?;
+                    e.properties.encode(writer, &NetEncodeOpts::None)?;
+                    e.gamemode.encode(writer, &NetEncodeOpts::None)?;
+                    e.ping.encode(writer, &NetEncodeOpts::None)?;
+                    match &e.display_name {
+                        Some(text) => {
+                            true.encode(writer, &NetEncodeOpts::None)?;
+                            text.encode(writer, &NetEncodeOpts::None)?;
+                        }
+                        None => {
+                            false.encode(writer, &NetEncodeOpts::None)?;
+                        }
+                    }
+                }
+                Ok(())
+            }
+            PlayerInfoPacketKind::UpdateLatency(entries) => {
+                VarInt::new(2).encode(writer, &NetEncodeOpts::None)?;
+                VarInt::new(entries.len() as i32).encode(writer, &NetEncodeOpts::None)?;
+                for e in entries {
+                    e.uuid.encode(writer, &NetEncodeOpts::None)?;
+                    e.ping.encode(writer, &NetEncodeOpts::None)?;
+                }
+                Ok(())
+            }
+            PlayerInfoPacketKind::Remove(entries) => {
+                VarInt::new(4).encode(writer, &NetEncodeOpts::None)?;
+                VarInt::new(entries.len() as i32).encode(writer, &NetEncodeOpts::None)?;
+                for e in entries {
+                    e.uuid.encode(writer, &NetEncodeOpts::None)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    async fn encode_async<W: tokio::io::AsyncWrite + Unpin>(
+        &self,
+        _writer: &mut W,
+        _opts: &NetEncodeOpts,
+    ) -> Result<(), NetEncodeError> {
+        unimplemented!();
+    }
 }
 
 impl PlayerInfoUpdatePacket {

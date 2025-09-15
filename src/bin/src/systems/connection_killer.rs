@@ -1,4 +1,5 @@
 use bevy_ecs::prelude::{Commands, Entity, Query, Res};
+use ferrumc_net_codec::net_types::length_prefixed_vec::LengthPrefixedVec;
 use ferrumc_core::identity::player_identity::PlayerIdentity;
 use ferrumc_net::connection::StreamWriter;
 use ferrumc_state::GlobalStateResource;
@@ -48,16 +49,14 @@ pub fn connection_killer(
                 if let Some(entry_ref) = state.0.players.player_list.get(&disconnecting_entity) {
                     let (uuid128, _name) = entry_ref.value().clone();
                     let remove_entry = ferrumc_net::packets::outgoing::player_info_update::RemoveEntry { uuid: uuid128 };
-                    let mut buf = Vec::new();
-                    if let Err(e) = ferrumc_net::packets::outgoing::player_info_update::encode_full_packet(&mut buf, &ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Remove(vec![remove_entry])) {
-                        warn!("Failed to encode remove-player packet: {:?}", e);
-                        continue;
-                    }
+                    let packet = ferrumc_net::packets::outgoing::player_info_update::PlayerInfoFull(
+                        ferrumc_net::packets::outgoing::player_info_update::PlayerInfoPacketKind::Remove(vec![remove_entry]),
+                    );
                     for (other_entity, other_conn, _other_identity) in query.iter() {
                         if other_entity == disconnecting_entity {
                             continue;
                         }
-                        if let Err(e) = other_conn.send_raw(&buf) {
+                        if let Err(e) = other_conn.send_packet_ref(&packet) {
                             warn!("Failed to send remove-player packet to {:?}: {:?}", other_entity, e);
                         }
                     }
