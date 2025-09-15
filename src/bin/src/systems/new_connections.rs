@@ -15,6 +15,7 @@ use bevy_ecs::prelude::Query;
 use ferrumc_state::GlobalStateResource;
 use std::time::Instant;
 use tracing::{error, trace};
+use tracing::debug;
 
 #[derive(Resource)]
 pub struct NewConnectionRecv(pub Receiver<NewConnection>);
@@ -58,9 +59,10 @@ pub fn accept_new_connections(
         // Add the new entity to the global state
         // already inserted a clone above; avoid moving the username again
         // Build AddPlayer packet for this new player including properties
-        let short = new_connection.player_identity.uuid.as_u128() as i32;
-        let add_player = PlayerWithActions::add_player_with_properties(short, new_connection.player_identity.username.clone());
-        let add_packet = PlayerInfoUpdatePacket::with_players(vec![add_player]);
+    let short_uuid = new_connection.player_identity.short_uuid;
+    let add_player = PlayerWithActions::add_player_with_properties(short_uuid, new_connection.player_identity.username.clone());
+    debug!("Broadcasting AddPlayer for player {:?}", new_connection.player_identity.username);
+    let add_packet = PlayerInfoUpdatePacket::with_players(vec![add_player]);
 
         // Broadcast to other connected players
         for (other_entity, other_conn) in query.iter() {

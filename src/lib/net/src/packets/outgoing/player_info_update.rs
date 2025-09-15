@@ -1,6 +1,7 @@
 use bevy_ecs::prelude::{Component, Entity, Query};
 use ferrumc_core::identity::player_identity::PlayerIdentity;
 use ferrumc_macros::{packet, NetEncode};
+use ferrumc_text::TextComponent;
 use ferrumc_net_codec::net_types::length_prefixed_vec::LengthPrefixedVec;
 use ferrumc_net_codec::net_types::var_int::VarInt;
 use tracing::debug;
@@ -44,7 +45,7 @@ impl PlayerInfoUpdatePacket {
             let players = query.iter().collect::<Vec<(_, _)>>();
             players
                 .iter()
-                .filter(|&player| player.0 == new_player_id)
+                .filter(|&player| player.0 != new_player_id)
                 .map(|player| player.1)
                 .collect()
         };
@@ -57,7 +58,7 @@ impl PlayerInfoUpdatePacket {
 
                 (uuid, name)
             })
-            .map(|(uuid, name)| PlayerWithActions::add_player(uuid, name))
+            .map(|(uuid, name)| PlayerWithActions::add_player_with_properties(uuid, name))
             .collect::<Vec<_>>();
 
         debug!("Sending PlayerInfoUpdatePacket with {:?} players", players);
@@ -90,10 +91,14 @@ impl PlayerWithActions {
             actions: vec![PlayerAction::AddPlayer {
                 name: name.into(),
                 properties: LengthPrefixedVec::default(),
+                gamemode: VarInt::new(0),
+                ping: VarInt::new(0),
+                display_name: None,
             }],
         }
     }
 
+    /// Add a player including properties (skin) if available
     /// Add a player including properties (skin) if available
     pub fn add_player_with_properties(uuid: i32, name: impl Into<String>) -> Self {
         let name = name.into();
@@ -111,17 +116,11 @@ impl PlayerWithActions {
             None => LengthPrefixedVec::default(),
         };
 
-        Self {
-            uuid,
-            actions: vec![PlayerAction::AddPlayer { name, properties: props }],
-        }
+        Self { uuid, actions: vec![PlayerAction::AddPlayer { name, properties: props, gamemode: VarInt::new(0), ping: VarInt::new(0), display_name: None }], }
     }
 
     pub fn remove_player(uuid: i32) -> Self {
-        Self {
-            uuid,
-            actions: vec![PlayerAction::RemovePlayer {}],
-        }
+        Self { uuid, actions: vec![PlayerAction::RemovePlayer {}], }
     }
 }
 
@@ -130,6 +129,9 @@ pub enum PlayerAction {
     AddPlayer {
         name: String,
         properties: LengthPrefixedVec<PlayerProperty>,
+        gamemode: VarInt,
+        ping: VarInt,
+        display_name: Option<TextComponent>,
     },
     RemovePlayer {
         // In the protocol remove has no fields for the player entry itself

@@ -18,8 +18,8 @@ mod tests {
     #[test]
     fn test_add_player_with_properties() {
         clear_cache();
-        insert_skin(42, SkinProperties { name: "textures".to_string(), value: "dummyvalue".to_string(), signature: Some("sig".to_string()) });
-        let p = PlayerWithActions::add_player_with_properties(42, "Bob");
+    insert_skin(42, SkinProperties { name: "textures".to_string(), value: "dummyvalue".to_string(), signature: Some("sig".to_string()) });
+    let p = PlayerWithActions::add_player_with_properties(42u128, "Bob");
         // mask should still be add
         assert_eq!(p.get_actions_mask(), 0x01);
     }

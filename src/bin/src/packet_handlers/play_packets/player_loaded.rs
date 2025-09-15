@@ -83,23 +83,14 @@ pub fn handle(
             }
 
             if !players.is_empty() {
+                tracing::debug!("Sending existing players list to {}: {} entries", player, players.len());
                 let packet = PlayerInfoUpdatePacket::with_players(players);
                 if let Err(e) = conn.send_packet_ref(&packet) {
                     tracing::error!("Failed to send existing players to {}: {:?}", player, e);
                 }
             }
 
-            // Broadcast to other connected players that this player joined
-            let add_packet = PlayerInfoUpdatePacket::new_player_join_packet(PlayerIdentity::new(player.to_string(), 0));
-            // We need to send add_packet to all other StreamWriters
-            for (other_entity, _other_pos, other_conn) in query.iter() {
-                if other_entity == entity {
-                    continue;
-                }
-                if let Err(e) = other_conn.send_packet_ref(&add_packet) {
-                    tracing::warn!("Failed to broadcast add-player to {:?}: {:?}", other_entity, e);
-                }
-            }
+            // Add broadcast already sent at spawn in `accept_new_connections`; do not re-broadcast here
         }
     }
 }
