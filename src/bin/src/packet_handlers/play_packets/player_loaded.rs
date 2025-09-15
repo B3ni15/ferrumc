@@ -2,7 +2,6 @@ use bevy_ecs::prelude::{Entity, Query, Res};
 use ferrumc_core::transform::position::Position;
 use ferrumc_net::connection::StreamWriter;
 use ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket;
-use ferrumc_core::identity::player_identity::PlayerIdentity;
 use ferrumc_net::packets::outgoing::synchronize_player_position::SynchronizePlayerPositionPacket;
 use ferrumc_net::PlayerLoadedReceiver;
 use ferrumc_state::GlobalStateResource;
