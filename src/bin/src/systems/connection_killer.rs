@@ -44,8 +44,9 @@ pub fn connection_killer(
                 }
             } else {
                 // Broadcast the disconnection to other players
-                // Build RemovePlayer packet and send to others
-                if let Some((uuid128, _name)) = state.0.players.player_list.get(&disconnecting_entity).map(|v| *v.value()) {
+                // Clone the stored tuple to avoid moving out of the DashMap entry
+                if let Some(entry_ref) = state.0.players.player_list.get(&disconnecting_entity) {
+                    let (uuid128, _name) = entry_ref.value().clone();
                     let short = uuid128 as i32;
                     let remove_pkt = ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket::with_players(vec![
                         ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::remove_player(short)
@@ -60,7 +61,10 @@ pub fn connection_killer(
                     }
                 }
             }
-            cmd.entity(entity).despawn();
+            // Only despawn the disconnecting entity, not every entity in the query
+            if entity == disconnecting_entity {
+                cmd.entity(entity).despawn();
+            }
         }
     }
 }

@@ -78,7 +78,7 @@ pub fn handle(
             for entry in state.0.players.player_list.iter() {
                 let (_entity, (uuid128, name)) = (entry.key().clone(), entry.value().clone());
                 // short uuid is i32 (lower bits)
-                let short = (*uuid128) as i32;
+                let short = uuid128 as i32;
                 players.push(ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::add_player(short, name.clone()));
             }
 

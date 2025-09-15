@@ -56,13 +56,7 @@ pub fn accept_new_connections(
 
         trace!("Spawned entity for new connection: {:?}", entity.id());
         // Add the new entity to the global state
-        state.0.players.player_list.insert(
-            entity.id(),
-            (
-                new_connection.player_identity.uuid.as_u128(),
-                new_connection.player_identity.username,
-            ),
-        );
+        // already inserted a clone above; avoid moving the username again
         // Build AddPlayer packet for this new player including properties
         let short = new_connection.player_identity.uuid.as_u128() as i32;
         let add_player = PlayerWithActions::add_player_with_properties(short, new_connection.player_identity.username.clone());
@@ -77,15 +71,7 @@ pub fn accept_new_connections(
                 tracing::warn!("Failed to send add-player to {:?}: {:?}", other_entity, e);
             }
         }
-        // Send existing players to the newly connected client
-        if let Some(stream_writer) = new_connection.stream.sender.clone().into_inner().ok() {
-            // Note: we don't have direct access to Query here; instead use the PlayerInfoUpdatePacket::new_player_join_packet
-            // to inform others and rely on other systems to send existing players to the new client when they finish loading.
-        }
-
-        // Broadcast to other players that a new player has joined
-        // We will iterate over all connections in ECS and send the add-player packet
-        // This requires access to the StreamWriter components; instead schedule a broadcast via the global state disconnection_queue is used elsewhere.
+        // Existing-player send is handled in player_loaded; add-player broadcast done above
         if let Err(err) = return_sender.send(entity.id()) {
             error!(
                 "Failed to send entity ID back to the networking thread: {:?}",
