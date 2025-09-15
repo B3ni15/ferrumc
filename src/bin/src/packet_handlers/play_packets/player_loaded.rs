@@ -1,6 +1,7 @@
 use bevy_ecs::prelude::{Entity, Query, Res};
 use ferrumc_core::transform::position::Position;
 use ferrumc_net::connection::StreamWriter;
+use ferrumc_core::conn::keepalive::KeepAliveTracker;
 use ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket;
 use ferrumc_net::packets::outgoing::synchronize_player_position::SynchronizePlayerPositionPacket;
 use ferrumc_net::PlayerLoadedReceiver;
@@ -11,10 +12,10 @@ use tracing::warn;
 pub fn handle(
     ev: Res<PlayerLoadedReceiver>,
     state: Res<GlobalStateResource>,
-    query: Query<(Entity, &Position, &StreamWriter)>,
+    query: Query<(Entity, &Position, &StreamWriter, &KeepAliveTracker)>,
 ) {
     for (_, player) in ev.0.try_iter() {
-        let Ok((entity, player_pos, conn)) = query.get(player) else {
+        let Ok((entity, player_pos, conn, keepalive)) = query.get(player) else {
             warn!("Player position not found in query.");
             continue;
         };
@@ -78,7 +79,20 @@ pub fn handle(
             let (_entity, (uuid128, name)) = (entry.key().clone(), entry.value().clone());
             // short uuid is i32 (lower bits)
             let short = uuid128 as i32;
-            players.push(ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::add_player_with_properties(short, name.clone()));
+            // Use 0 for other players for now; later we can look up their KeepAliveTracker RTTs
+            players.push(ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::add_player_with_properties(short, name.clone(), 0));
+        }
+
+        // If we have an RTT measurement for this connection, update the player's own entry ping.
+        // Rebuild their PlayerWithActions using the RTT from their KeepAliveTracker.
+        if let Some(entry_ref) = state.0.players.player_list.get(&entity) {
+            let (uuid128, name) = entry_ref.value().clone();
+            let short = uuid128 as i32;
+            let rtt = keepalive.last_rtt_ms;
+            // find index of this player's entry
+            if let Some(idx) = players.iter().position(|p| p.uuid == short) {
+                players[idx] = ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::add_player_with_properties(short, name, rtt);
+            }
         }
 
         if !players.is_empty() {

@@ -48,6 +48,7 @@ pub fn keep_alive_system(
             }
 
             tracker.last_sent_keep_alive = timestamp;
+            tracker.last_sent_instant = Some(std::time::Instant::now());
             tracker.has_received_keep_alive = false;
         }
     }

@@ -26,6 +26,13 @@ pub fn handle(
                 .players
                 .disconnect(eid, Some("Invalid keep alive packet received".to_string()));
         } else {
+            // compute RTT if we have an instant for when the packet was sent
+            let now = Instant::now();
+            if let Some(sent_instant) = keep_alive_tracker.last_sent_instant {
+                let rtt = now.duration_since(sent_instant);
+                keep_alive_tracker.last_rtt_ms = rtt.as_millis().clamp(0, i128::from(i32::MAX) as u128) as i32;
+            }
+
             keep_alive_tracker.last_received_keep_alive = Instant::now();
             keep_alive_tracker.has_received_keep_alive = true;
         }

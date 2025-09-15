@@ -60,7 +60,8 @@ pub fn accept_new_connections(
         // already inserted a clone above; avoid moving the username again
         // Build AddPlayer packet for this new player including properties
     let short_uuid = new_connection.player_identity.short_uuid;
-    let add_player = PlayerWithActions::add_player_with_properties(short_uuid, new_connection.player_identity.username.clone());
+    // initial ping is 0 until we have an RTT measurement
+    let add_player = PlayerWithActions::add_player_with_properties(short_uuid, new_connection.player_identity.username.clone(), 0);
     debug!("Broadcasting AddPlayer for player {:?}", new_connection.player_identity.username);
     let add_packet = PlayerInfoUpdatePacket::with_players(vec![add_player]);
 

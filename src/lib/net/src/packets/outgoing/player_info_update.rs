@@ -30,7 +30,7 @@ impl PlayerInfoUpdatePacket {
 
     /// The packet to be sent to all already connected players when a new player joins the server
     pub fn new_player_join_packet(identity: PlayerIdentity) -> Self {
-        let player = PlayerWithActions::add_player(identity.short_uuid, identity.username);
+        let player = PlayerWithActions::add_player(identity.short_uuid, identity.username, 0);
 
         Self::with_players(vec![player])
     }
@@ -58,7 +58,7 @@ impl PlayerInfoUpdatePacket {
 
                 (uuid, name)
             })
-            .map(|(uuid, name)| PlayerWithActions::add_player_with_properties(uuid, name))
+            .map(|(uuid, name)| PlayerWithActions::add_player_with_properties(uuid, name, 0))
             .collect::<Vec<_>>();
 
         debug!("Sending PlayerInfoUpdatePacket with {:?} players", players);
@@ -85,14 +85,14 @@ impl PlayerWithActions {
         mask
     }
 
-    pub fn add_player(uuid: i32, name: impl Into<String>) -> Self {
+    pub fn add_player(uuid: i32, name: impl Into<String>, ping: i32) -> Self {
         Self {
             uuid,
             actions: vec![PlayerAction::AddPlayer {
                 name: name.into(),
                 properties: LengthPrefixedVec::default(),
                 gamemode: VarInt::new(0),
-                ping: VarInt::new(0),
+                ping: VarInt::new(ping),
                 display_name: None,
             }],
         }
@@ -100,7 +100,8 @@ impl PlayerWithActions {
 
     /// Add a player including properties (skin) if available
     /// Add a player including properties (skin) if available
-    pub fn add_player_with_properties(uuid: i32, name: impl Into<String>) -> Self {
+    /// Add a player including properties (skin) if available
+    pub fn add_player_with_properties(uuid: i32, name: impl Into<String>, ping: i32) -> Self {
         let name = name.into();
         let props = match skins_cache::get_skin(uuid) {
             Some(sp) => {
@@ -116,7 +117,7 @@ impl PlayerWithActions {
             None => LengthPrefixedVec::default(),
         };
 
-        Self { uuid, actions: vec![PlayerAction::AddPlayer { name, properties: props, gamemode: VarInt::new(0), ping: VarInt::new(0), display_name: None }], }
+        Self { uuid, actions: vec![PlayerAction::AddPlayer { name, properties: props, gamemode: VarInt::new(0), ping: VarInt::new(ping), display_name: None }], }
     }
 
     pub fn remove_player(uuid: i32) -> Self {
