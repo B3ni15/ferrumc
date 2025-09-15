@@ -1,6 +1,8 @@
 use bevy_ecs::prelude::{Entity, Query, Res};
 use ferrumc_core::transform::position::Position;
 use ferrumc_net::connection::StreamWriter;
+use ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket;
+use ferrumc_core::identity::player_identity::PlayerIdentity;
 use ferrumc_net::packets::outgoing::synchronize_player_position::SynchronizePlayerPositionPacket;
 use ferrumc_net::PlayerLoadedReceiver;
 use ferrumc_state::GlobalStateResource;
@@ -63,11 +65,41 @@ pub fn handle(
                     );
                 }
             }
-        } else {
+            } else {
             warn!(
                 "Failed to fetch head block for player {} at position: ({}, {}, {})",
                 player, player_pos.x, player_pos.y, player_pos.z
             );
+            }
+
+            // Send existing players to this newly loaded player
+            // Build a packet that contains all currently connected players
+            let mut players = vec![];
+            for entry in state.0.players.player_list.iter() {
+                let (_entity, (uuid128, name)) = (entry.key().clone(), entry.value().clone());
+                // short uuid is i32 (lower bits)
+                let short = (*uuid128) as i32;
+                players.push(ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::add_player(short, name.clone()));
+            }
+
+            if !players.is_empty() {
+                let packet = PlayerInfoUpdatePacket::with_players(players);
+                if let Err(e) = conn.send_packet_ref(&packet) {
+                    tracing::error!("Failed to send existing players to {}: {:?}", player, e);
+                }
+            }
+
+            // Broadcast to other connected players that this player joined
+            let add_packet = PlayerInfoUpdatePacket::new_player_join_packet(PlayerIdentity::new(player.to_string(), 0));
+            // We need to send add_packet to all other StreamWriters
+            for (other_entity, other_pos, other_conn) in query.iter() {
+                if other_entity == entity {
+                    continue;
+                }
+                if let Err(e) = other_conn.send_packet_ref(&add_packet) {
+                    tracing::warn!("Failed to broadcast add-player to {:?}: {:?}", other_entity, e);
+                }
+            }
         }
     }
 }

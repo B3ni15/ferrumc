@@ -8,6 +8,7 @@ use ferrumc_core::transform::rotation::Rotation;
 use ferrumc_inventories::hotbar::Hotbar;
 use ferrumc_inventories::inventory::Inventory;
 use ferrumc_net::connection::NewConnection;
+use ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket;
 use ferrumc_state::GlobalStateResource;
 use std::time::Instant;
 use tracing::{error, trace};
@@ -58,6 +59,15 @@ pub fn accept_new_connections(
                 new_connection.player_identity.username,
             ),
         );
+        // Send existing players to the newly connected client
+        if let Some(stream_writer) = new_connection.stream.sender.clone().into_inner().ok() {
+            // Note: we don't have direct access to Query here; instead use the PlayerInfoUpdatePacket::new_player_join_packet
+            // to inform others and rely on other systems to send existing players to the new client when they finish loading.
+        }
+
+        // Broadcast to other players that a new player has joined
+        // We will iterate over all connections in ECS and send the add-player packet
+        // This requires access to the StreamWriter components; instead schedule a broadcast via the global state disconnection_queue is used elsewhere.
         if let Err(err) = return_sender.send(entity.id()) {
             error!(
                 "Failed to send entity ID back to the networking thread: {:?}",

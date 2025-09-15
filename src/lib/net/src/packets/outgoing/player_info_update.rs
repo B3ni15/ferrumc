@@ -77,6 +77,7 @@ impl PlayerWithActions {
         for action in &self.actions {
             mask |= match action {
                 PlayerAction::AddPlayer { .. } => 0x01,
+                PlayerAction::RemovePlayer { .. } => 0x02,
             }
         }
         mask
@@ -91,6 +92,13 @@ impl PlayerWithActions {
             }],
         }
     }
+
+    pub fn remove_player(uuid: i32) -> Self {
+        Self {
+            uuid,
+            actions: vec![PlayerAction::RemovePlayer {}],
+        }
+    }
 }
 
 #[derive(NetEncode, Debug)]
@@ -98,6 +106,9 @@ pub enum PlayerAction {
     AddPlayer {
         name: String,
         properties: LengthPrefixedVec<PlayerProperty>,
+    },
+    RemovePlayer {
+        // In the protocol remove has no fields for the player entry itself
     },
 }
 

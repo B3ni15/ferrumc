@@ -44,6 +44,21 @@ pub fn connection_killer(
                 }
             } else {
                 // Broadcast the disconnection to other players
+                // Build RemovePlayer packet and send to others
+                if let Some((uuid128, _name)) = state.0.players.player_list.get(&disconnecting_entity).map(|v| *v.value()) {
+                    let short = uuid128 as i32;
+                    let remove_pkt = ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket::with_players(vec![
+                        ferrumc_net::packets::outgoing::player_info_update::PlayerWithActions::remove_player(short)
+                    ]);
+                    for (other_entity, other_conn, _other_identity) in query.iter() {
+                        if other_entity == disconnecting_entity {
+                            continue;
+                        }
+                        if let Err(e) = other_conn.send_packet_ref(&remove_pkt) {
+                            warn!("Failed to send remove-player packet to {:?}: {:?}", other_entity, e);
+                        }
+                    }
+                }
             }
             cmd.entity(entity).despawn();
         }
