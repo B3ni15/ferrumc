@@ -8,7 +8,7 @@ use ferrumc_net::packets::outgoing::player_info_update::{PlayerInfoUpdatePacket,
 use tracing::warn;
 
 pub fn player_count_updater(
-    state: Res<GlobalStateResource>,
+    _state: Res<GlobalStateResource>,
     player_query: Query<(Entity, &PlayerIdentity, &KeepAliveTracker)>,
     all_players_stream_writer_query: Query<&StreamWriter>,
     mut cooldown_tracker: ResMut<PlayerCountUpdateCooldown>,

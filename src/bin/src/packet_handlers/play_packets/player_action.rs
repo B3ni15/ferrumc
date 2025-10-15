@@ -19,7 +19,7 @@ pub fn handle(
 ) {
     // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Protocol?oldid=2773393#Player_Action
     for (event, trigger_eid) in events.0.try_iter() {
-        let res: Result<(), BinaryError> = try {
+        let res: Result<(), BinaryError> = (|| {
             match event.status.0 {
                 0 => {
                     let mut chunk = match state.0.clone().world.load_chunk_owned(
@@ -45,7 +45,7 @@ pub fn handle(
                     chunk.set_block(relative_x, relative_y, relative_z, BlockData::default())?;
                     // Save the chunk to disk
                     state.0.world.save_chunk(Arc::new(chunk))?;
-                    for (eid, conn) in query {
+                    for (eid, conn) in query.iter() {
                         if !state.0.players.is_connected(eid) {
                             continue;
                         }
@@ -69,7 +69,8 @@ pub fn handle(
                 }
                 _ => {}
             };
-        };
+            Ok(())
+        })();
         if res.is_err() {
             error!("Error handling player action: {:?}", res);
         }

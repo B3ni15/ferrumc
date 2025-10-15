@@ -29,10 +29,10 @@ pub fn accept_new_connections(
     while let Ok(new_connection) = new_connections.0.try_recv() {
         let return_sender = new_connection.entity_return;
         let player_identity = new_connection.player_identity.clone();
-        let new_player_stream_writer = new_connection.stream.clone();
+        let new_player_stream = new_connection.stream;
 
         let entity = cmd.spawn((
-            new_connection.stream,
+            new_player_stream,
             Position::default(),
             ChunkReceiver::default(),
             Rotation::default(),
@@ -70,8 +70,20 @@ pub fn accept_new_connections(
         }
 
         // Send existing players info to the new player
-        let existing_players_info_packet = PlayerInfoUpdatePacket::existing_player_info_packet(entity, all_players_query);
-        if let Err(err) = new_connection.stream.send_packet_ref(&existing_players_info_packet) {
+        let existing_players_actions: Vec<PlayerWithActions> = all_players_query
+            .iter()
+            .filter(|&(e, _, _, _)| e != entity)
+            .map(|(_, player_identity, _, keep_alive_tracker)| {
+                PlayerWithActions::add_player(
+                    player_identity.short_uuid,
+                    player_identity.username.clone(),
+                    keep_alive_tracker.ping,
+                )
+            })
+            .collect();
+
+        let existing_players_info_packet = PlayerInfoUpdatePacket::with_players(existing_players_actions);
+        if let Err(err) = new_player_stream.send_packet_ref(&existing_players_info_packet) {
             warn!("Failed to send existing players info packet to new player {}: {:?}", entity, err);
         }
 
