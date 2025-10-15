@@ -1,8 +1,6 @@
 use bevy_ecs::prelude::Component;
 use std::time::Instant;
 
-#[derive(Component)]
-use std::time::Instant;
 
 #[derive(Debug, Component)]
 pub struct KeepAliveTracker {

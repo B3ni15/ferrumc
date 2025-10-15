@@ -1,5 +1,4 @@
 //! FerrumC's Command API.
-#![feature(duration_constructors)]
 
 use std::sync::{Arc, LazyLock};
 

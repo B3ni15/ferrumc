@@ -25,9 +25,9 @@ impl CommandArgument for Duration {
             };
 
             match unit {
-                'd' => duration += Duration::from_days(value),
-                'h' => duration += Duration::from_hours(value),
-                'm' => duration += Duration::from_mins(value),
+                'd' => duration += Duration::from_secs(value * 24 * 3600),
+                'h' => duration += Duration::from_secs(value * 3600),
+                'm' => duration += Duration::from_secs(value * 60),
                 's' => duration += Duration::from_secs(value),
                 _ => return Err(parser_error("invalid unit: expected d/h/m/s")),
             }

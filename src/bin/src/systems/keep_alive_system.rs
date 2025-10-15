@@ -4,6 +4,7 @@ use ferrumc_net::connection::StreamWriter;
 use ferrumc_state::GlobalStateResource;
 use std::time::Duration;
 use tracing::warn;
+use std::time::Instant;
 
 pub fn keep_alive_system(
     mut query: Query<(Entity, &mut KeepAliveTracker, &StreamWriter)>,
