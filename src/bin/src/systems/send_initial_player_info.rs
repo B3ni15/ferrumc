@@ -1,4 +1,4 @@
-use bevy_ecs::prelude::{Commands, Entity, Query, Res, With};
+use bevy_ecs::prelude::{Commands, Entity, Query, With};
 use ferrumc_core::conn::keepalive::KeepAliveTracker;
 use ferrumc_core::conn::new_player_tag::NewPlayerTag;
 use ferrumc_core::identity::player_identity::PlayerIdentity;
@@ -37,8 +37,8 @@ pub fn send_initial_player_info(
         // Send existing players info to the new player
         let existing_players_actions: Vec<PlayerWithActions> = all_players_query
             .iter()
-            .filter(|&(e, _, _)| e != new_player_entity)
-            .map(|(_, player_identity, keep_alive_tracker)| {
+            .filter(|&(e, _, _, _)| e != new_player_entity)
+            .map(|(_, player_identity, _, keep_alive_tracker)| {
                 PlayerWithActions::add_player(
                     player_identity.short_uuid,
                     player_identity.username.clone(),
