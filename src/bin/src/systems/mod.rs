@@ -8,6 +8,7 @@ pub mod player_count_update;
 pub mod send_chunks;
 pub mod shutdown_systems;
 pub mod world_sync;
+pub mod send_initial_player_info;
 
 pub fn register_game_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
     // Tick-bound systems only (run every game tick)

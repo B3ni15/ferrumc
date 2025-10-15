@@ -8,11 +8,12 @@ use ferrumc_core::transform::rotation::Rotation;
 use ferrumc_inventories::hotbar::Hotbar;
 use ferrumc_inventories::inventory::Inventory;
 use ferrumc_net::connection::{NewConnection, StreamWriter};
-use ferrumc_net::packets::outgoing::player_info_update::{PlayerInfoUpdatePacket, PlayerWithActions};
+use ferrumc_net::packets::outgoing::player_info_update::PlayerInfoUpdatePacket;
 use ferrumc_state::GlobalStateResource;
 use std::time::Instant;
 use tracing::{error, trace, warn};
 use ferrumc_core::identity::player_identity::PlayerIdentity;
+use ferrumc_core::conn::new_player_tag::NewPlayerTag;
 
 #[derive(Resource)]
 pub struct NewConnectionRecv(pub Receiver<NewConnection>);
@@ -29,7 +30,6 @@ pub fn accept_new_connections(
     while let Ok(new_connection) = new_connections.0.try_recv() {
         let return_sender = new_connection.entity_return;
         let player_identity = new_connection.player_identity.clone();
-        let new_player_stream_for_packet = new_connection.stream.clone();
 
         let entity = cmd.spawn((
             new_connection.stream,
@@ -47,6 +47,7 @@ pub fn accept_new_connections(
             },
             Inventory::new(46),
             Hotbar::default(),
+            NewPlayerTag,
         )).id();
 
         state.0.players.player_list.insert(
@@ -69,23 +70,7 @@ pub fn accept_new_connections(
             }
         }
 
-        // Send existing players info to the new player
-        let existing_players_actions: Vec<PlayerWithActions> = all_players_query
-            .iter()
-            .filter(|&(e, _, _, _)| e != entity)
-            .map(|(_, player_identity, _, keep_alive_tracker)| {
-                PlayerWithActions::add_player(
-                    player_identity.short_uuid,
-                    player_identity.username.clone(),
-                    keep_alive_tracker.ping,
-                )
-            })
-            .collect();
 
-        let existing_players_info_packet = PlayerInfoUpdatePacket::with_players(existing_players_actions);
-        if let Err(err) = new_player_stream_for_packet.send_packet_ref(&existing_players_info_packet) {
-            warn!("Failed to send existing players info packet to new player {}: {:?}", entity, err);
-        }
 
         if let Err(err) = return_sender.send(entity) {
             error!(
