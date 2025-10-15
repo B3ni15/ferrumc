@@ -29,6 +29,7 @@ pub fn accept_new_connections(
     while let Ok(new_connection) = new_connections.0.try_recv() {
         let return_sender = new_connection.entity_return;
         let player_identity = new_connection.player_identity.clone();
+        let new_player_stream_for_packet = new_connection.stream.clone();
 
         let entity = cmd.spawn((
             new_connection.stream,
@@ -58,9 +59,6 @@ pub fn accept_new_connections(
 
         trace!("Spawned entity for new connection: {:?}", entity);
 
-        // Get the StreamWriter for the newly spawned entity
-        let (_, _, new_player_stream_writer, _) = all_players_query.get(entity).unwrap();
-
         // Send new player info to all existing players
         let new_player_join_packet = PlayerInfoUpdatePacket::new_player_join_packet(player_identity.clone(), 0);
         for (existing_player_entity, _, stream_writer, _) in all_players_query.iter() {
@@ -85,7 +83,7 @@ pub fn accept_new_connections(
             .collect();
 
         let existing_players_info_packet = PlayerInfoUpdatePacket::with_players(existing_players_actions);
-        if let Err(err) = new_player_stream_writer.send_packet_ref(&existing_players_info_packet) {
+        if let Err(err) = new_player_stream_for_packet.send_packet_ref(&existing_players_info_packet) {
             warn!("Failed to send existing players info packet to new player {}: {:?}", entity, err);
         }
 
