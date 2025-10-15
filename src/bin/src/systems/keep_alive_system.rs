@@ -49,6 +49,7 @@ pub fn keep_alive_system(
 
             tracker.last_sent_keep_alive = timestamp;
             tracker.has_received_keep_alive = false;
+            tracker.last_sent_instant = Instant::now();
         }
     }
 }

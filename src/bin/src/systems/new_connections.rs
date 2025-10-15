@@ -1,4 +1,4 @@
-use bevy_ecs::prelude::{Commands, Res, Resource};
+use bevy_ecs::prelude::{Commands, Res, Resource, Query};
 use crossbeam_channel::Receiver;
 use ferrumc_core::chunks::chunk_receiver::ChunkReceiver;
 use ferrumc_core::conn::keepalive::KeepAliveTracker;
@@ -7,10 +7,11 @@ use ferrumc_core::transform::position::Position;
 use ferrumc_core::transform::rotation::Rotation;
 use ferrumc_inventories::hotbar::Hotbar;
 use ferrumc_inventories::inventory::Inventory;
-use ferrumc_net::connection::NewConnection;
+use ferrumc_net::connection::{NewConnection, StreamWriter};
+use ferrumc_net::packets::outgoing::player_info_update::{PlayerInfoUpdatePacket, PlayerWithActions};
 use ferrumc_state::GlobalStateResource;
 use std::time::Instant;
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 #[derive(Resource)]
 pub struct NewConnectionRecv(pub Receiver<NewConnection>);
@@ -19,46 +20,61 @@ pub fn accept_new_connections(
     mut cmd: Commands,
     new_connections: Res<NewConnectionRecv>,
     state: Res<GlobalStateResource>,
+    all_players_query: Query<(Entity, &PlayerIdentity, &StreamWriter, &KeepAliveTracker)>,
 ) {
     if new_connections.0.is_empty() {
         return;
     }
     while let Ok(new_connection) = new_connections.0.try_recv() {
         let return_sender = new_connection.entity_return;
+        let player_identity = new_connection.player_identity.clone();
+        let new_player_stream_writer = new_connection.stream.clone();
+
         let entity = cmd.spawn((
             new_connection.stream,
             Position::default(),
             ChunkReceiver::default(),
             Rotation::default(),
             OnGround::default(),
-            new_connection.player_identity.clone(),
+            player_identity.clone(),
             KeepAliveTracker {
                 last_sent_keep_alive: 0,
                 last_received_keep_alive: Instant::now(),
                 has_received_keep_alive: true,
+                ping: 0,
+                last_sent_instant: Instant::now(),
             },
             Inventory::new(46),
             Hotbar::default(),
-        ));
+        )).id();
 
         state.0.players.player_list.insert(
-            entity.id(),
+            entity,
             (
-                new_connection.player_identity.uuid.as_u128(),
-                new_connection.player_identity.username.clone(),
+                player_identity.uuid.as_u128(),
+                player_identity.username.clone(),
             ),
         );
 
-        trace!("Spawned entity for new connection: {:?}", entity.id());
-        // Add the new entity to the global state
-        state.0.players.player_list.insert(
-            entity.id(),
-            (
-                new_connection.player_identity.uuid.as_u128(),
-                new_connection.player_identity.username,
-            ),
-        );
-        if let Err(err) = return_sender.send(entity.id()) {
+        trace!("Spawned entity for new connection: {:?}", entity);
+
+        // Send new player info to all existing players
+        let new_player_join_packet = PlayerInfoUpdatePacket::new_player_join_packet(player_identity.clone(), 0);
+        for (existing_player_entity, _, stream_writer, _) in all_players_query.iter() {
+            if existing_player_entity != entity {
+                if let Err(err) = stream_writer.send_packet_ref(&new_player_join_packet) {
+                    warn!("Failed to send new player join packet to existing player {}: {:?}", existing_player_entity, err);
+                }
+            }
+        }
+
+        // Send existing players info to the new player
+        let existing_players_info_packet = PlayerInfoUpdatePacket::existing_player_info_packet(entity, all_players_query);
+        if let Err(err) = new_player_stream_writer.send_packet_ref(&existing_players_info_packet) {
+            warn!("Failed to send existing players info packet to new player {}: {:?}", entity, err);
+        }
+
+        if let Err(err) = return_sender.send(entity) {
             error!(
                 "Failed to send entity ID back to the networking thread: {:?}",
                 err

@@ -27,8 +27,8 @@ impl PlayerInfoUpdatePacket {
     }
 
     /// The packet to be sent to all already connected players when a new player joins the server
-    pub fn new_player_join_packet(identity: PlayerIdentity) -> Self {
-        let player = PlayerWithActions::add_player(identity.short_uuid, identity.username);
+    pub fn new_player_join_packet(identity: PlayerIdentity, ping: i32) -> Self {
+        let player = PlayerWithActions::add_player(identity.short_uuid, identity.username, ping);
 
         Self::with_players(vec![player])
     }
@@ -37,26 +37,23 @@ impl PlayerInfoUpdatePacket {
     /// To let them know about all the players that are already connected
     pub fn existing_player_info_packet(
         new_player_id: Entity,
-        query: Query<(Entity, &PlayerIdentity)>,
+        query: Query<(Entity, &PlayerIdentity, &KeepAliveTracker)>,
     ) -> Self {
-        let players: Vec<&PlayerIdentity> = {
-            let players = query.iter().collect::<Vec<(_, _)>>();
-            players
-                .iter()
-                .filter(|&player| player.0 == new_player_id)
-                .map(|player| player.1)
-                .collect()
-        };
+        let players: Vec<(i32, String, i32)> = query
+            .iter()
+            .filter(|&(entity, _, _)| entity != new_player_id)
+            .map(|(_, player_identity, keep_alive_tracker)| {
+                (
+                    player_identity.short_uuid,
+                    player_identity.username.clone(),
+                    keep_alive_tracker.ping,
+                )
+            })
+            .collect();
 
         let players = players
             .into_iter()
-            .map(|player| {
-                let uuid = player.short_uuid;
-                let name = player.username.clone();
-
-                (uuid, name)
-            })
-            .map(|(uuid, name)| PlayerWithActions::add_player(uuid, name))
+            .map(|(uuid, name, ping)| PlayerWithActions::add_player(uuid, name, ping))
             .collect::<Vec<_>>();
 
         debug!("Sending PlayerInfoUpdatePacket with {:?} players", players);
@@ -77,18 +74,45 @@ impl PlayerWithActions {
         for action in &self.actions {
             mask |= match action {
                 PlayerAction::AddPlayer { .. } => 0x01,
+                PlayerAction::UpdateGamemode { .. } => 0x02,
+                PlayerAction::UpdateListed { .. } => 0x08,
+                PlayerAction::UpdateLatency { .. } => 0x04,
             }
         }
         mask
     }
 
-    pub fn add_player(uuid: i32, name: impl Into<String>) -> Self {
+    pub fn add_player(uuid: i32, name: impl Into<String>, ping: i32) -> Self {
         Self {
             uuid,
             actions: vec![PlayerAction::AddPlayer {
                 name: name.into(),
                 properties: LengthPrefixedVec::default(),
+                ping,
             }],
+        }
+    }
+
+    pub fn update_gamemode(uuid: i32, gamemode: i32) -> Self {
+        Self {
+            uuid,
+            actions: vec![PlayerAction::UpdateGamemode {
+                gamemode: VarInt::new(gamemode),
+            }],
+        }
+    }
+
+    pub fn update_listed(uuid: i32, listed: bool) -> Self {
+        Self {
+            uuid,
+            actions: vec![PlayerAction::UpdateListed { listed }],
+        }
+    }
+
+    pub fn update_latency(uuid: i32, ping: i32) -> Self {
+        Self {
+            uuid,
+            actions: vec![PlayerAction::UpdateLatency { ping: VarInt::new(ping) }],
         }
     }
 }
@@ -98,6 +122,16 @@ pub enum PlayerAction {
     AddPlayer {
         name: String,
         properties: LengthPrefixedVec<PlayerProperty>,
+        ping: i32,
+    },
+    UpdateGamemode {
+        gamemode: VarInt,
+    },
+    UpdateListed {
+        listed: bool,
+    },
+    UpdateLatency {
+        ping: VarInt,
     },
 }
 

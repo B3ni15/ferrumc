@@ -28,6 +28,8 @@ pub fn handle(
         } else {
             keep_alive_tracker.last_received_keep_alive = Instant::now();
             keep_alive_tracker.has_received_keep_alive = true;
+            let ping = Instant::now().duration_since(keep_alive_tracker.last_sent_instant).as_millis() as i32;
+            keep_alive_tracker.ping = ping;
         }
     }
 }
