@@ -1,4 +1,4 @@
-use bevy_ecs::prelude::{Commands, Res, Resource, Query};
+use bevy_ecs::prelude::{Commands, Res, Resource, Entity, Query};
 use crossbeam_channel::Receiver;
 use ferrumc_core::chunks::chunk_receiver::ChunkReceiver;
 use ferrumc_core::conn::keepalive::KeepAliveTracker;
@@ -12,6 +12,7 @@ use ferrumc_net::packets::outgoing::player_info_update::{PlayerInfoUpdatePacket,
 use ferrumc_state::GlobalStateResource;
 use std::time::Instant;
 use tracing::{error, trace, warn};
+use ferrumc_core::identity::player_identity::PlayerIdentity;
 
 #[derive(Resource)]
 pub struct NewConnectionRecv(pub Receiver<NewConnection>);
@@ -70,7 +71,7 @@ pub fn accept_new_connections(
 
         // Send existing players info to the new player
         let existing_players_info_packet = PlayerInfoUpdatePacket::existing_player_info_packet(entity, all_players_query);
-        if let Err(err) = new_player_stream_writer.send_packet_ref(&existing_players_info_packet) {
+        if let Err(err) = new_connection.stream.send_packet_ref(&existing_players_info_packet) {
             warn!("Failed to send existing players info packet to new player {}: {:?}", entity, err);
         }
 

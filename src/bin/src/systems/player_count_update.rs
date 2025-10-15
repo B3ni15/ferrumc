@@ -15,10 +15,10 @@ pub fn player_count_updater(
 ) {
     // Frequency is controlled by the schedule period.
     for (entity, player_identity, keep_alive_tracker) in player_query.iter() {
-        let uuid = player_identity.uuid;
+        let uuid = player_identity.short_uuid;
 
         let player_info_packet = PlayerInfoUpdatePacket::with_players(vec![
-            PlayerWithActions::update_latency(uuid.as_i32(), keep_alive_tracker.ping),
+            PlayerWithActions::update_latency(uuid, keep_alive_tracker.ping),
         ]);
 
         for stream_writer in all_players_stream_writer_query.iter() {

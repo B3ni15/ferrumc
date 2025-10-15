@@ -1,4 +1,3 @@
-#![feature(try_blocks)]
 
 use crate::errors::BinaryError;
 use clap::Parser;
