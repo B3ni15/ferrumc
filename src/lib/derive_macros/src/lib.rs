@@ -1,4 +1,3 @@
-#![feature(proc_macro_quote)]
 
 use proc_macro::TokenStream;
 
